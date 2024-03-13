@@ -32,13 +32,8 @@ def main():
     logging.info(f"MLFlow Version: {mlflow.version.VERSION}")
     logging.info(f"MLFlow Timeout: {os.getenv('MLFLOW_HTTP_REQUEST_TIMEOUT')}")
 
-    # Read data from configuration file
-    with open("config/mlflow-tracking-server.yml", 'r') as file:
-        mlflow_config = yaml.safe_load(file)
-
     # Connect to MLflow
-    tracking_uri = mlflow_config["mlflow"]["tracking_server_uri"]
-    mlflow.set_tracking_uri(tracking_uri)
+    tracking_uri = mlflow.get_tracking_uri()
     logging.info(f'Connecting to MLFlow Tracking Server at URI: "{tracking_uri}" on Experiment: "{experiment_name}"')
 
     # Find experiment by name
@@ -73,7 +68,7 @@ def main():
     # Concatenate all runs into a single DataFrame, if not empty
     if all_runs:
         df_results = pd.concat(all_runs, ignore_index=True)
-        df_results_filename = f"data/d_{experiment_name}_all_runs.csv"
+        df_results_filename = f"data/raw/d_{experiment_name}_all_runs.csv"
         df_results.to_csv(df_results_filename, index=False)
         logging.info(f'Writing runs data to "{df_results_filename}"')
     else:
