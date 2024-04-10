@@ -4,12 +4,22 @@ version = "0.1.0"
 description = "ML Model for predicting gamma and beta parameters for a QAOA"
 authors = ["Vivek Katial <vivekkatial@gmail.com>"]
 readme = "README.md"
+packages = [
+    { include = "src"},
+]
 
 [tool.poetry.dependencies]
 python = "^3.11"
 mlflow = "^2.11.1"
 python-dotenv = "^1.0.1"
-
+streamlit = "^1.33.0"
+gradio = "^4.25.0"
+networkx = "^3.3"
+pyvis = "^0.3.2"
+black = "^24.3.0"
+plotly = "^5.20.0"
+pynauty = "^2.8.6"
+seaborn = "^0.13.2"
 
 [build-system]
 requires = ["poetry-core"]

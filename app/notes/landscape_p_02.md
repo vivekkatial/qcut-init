@@ -1,0 +1,3 @@
+Lets investigate the landscape for $p=2$.
+
+For $p=2$ the landscape is 4-dimensional as we're optimizing over two sets of angles $(\gamma_1, \beta_1)$ and $(\gamma_2, \beta_2)$. As such, we're going to deploy a parameter-fixing strategy to reduce the dimensionality of the landscape to 2D. This means we fix the angles $(\gamma_1, \beta_1)$ to the optimal angles $(\gamma^*, \beta^*)$ found for $p=1$ and then visualize for $(\gamma_2, \beta_2)$. When an instance doesn't have an analaytical solution, we can use the numerical solution as a proxy. The numerical solutions are calculated by reading off the optimal angles from the landscape plots.
