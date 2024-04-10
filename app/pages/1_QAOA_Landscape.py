@@ -241,7 +241,7 @@ def app():
     
     st.subheader("Landscape Visualization")
 
-    tabs = st.tabs(["$p=1$", "$p=2$", "$\gamma^*, \\beta^*$"])
+    tabs = st.tabs(["$p=1$", "$p=2$", "$\gamma^{*}_{p=2}, \\beta^{*}_{p=2}$"])
 
     with tabs[0]:
 

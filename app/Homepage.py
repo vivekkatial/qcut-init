@@ -16,8 +16,7 @@ st.markdown(
     The app is divided into two sections:
     - **Instance Space Analysis**: This section provides an overview of the instance space analysis for the problem.
     - **Landscape**: This section provides an overview of the optimal angles for the problem.
-    - What are you reading??
-
+    
     $$ f(x) = x^2 $$
 """
 )

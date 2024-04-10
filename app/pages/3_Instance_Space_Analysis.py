@@ -12,25 +12,43 @@ st.set_page_config(page_title="Instance Space Analysis", page_icon="📈",     l
 st.markdown("# Instance Space Analysis")
 st.sidebar.header("Select ISA Experiment")
 
-def plot_facetted_features(d_coords, d_features):
+def csv_to_latex(csv_file_path):
+    # Read the CSV file
+    df = pd.read_csv(csv_file_path)
+    
+    # Convert the dataframe to LaTeX format
+    latex_str = df.to_latex(index=False, escape=False)
+    
+    return latex_str
+
+
+def plot_facetted_data(d_coords, d_data, exclude_columns=None):
     """
     Creates a single facetted plot with multiple facets where each facet is a scatter plot of z_1 vs z_2,
-    colored by the values of a different feature from d_features, excluding 'Source' and 'Evolution' columns.
+    colored by the values of different data columns from d_data, with an option to exclude specific columns.
 
-    :param d_coords: A DataFrame containing the z_1 and z_2 coordinates.
-    :param d_features: A DataFrame containing the features.
+    :param d_coords: DataFrame containing the z_1 and z_2 coordinates.
+    :param d_data: DataFrame containing the data to be plotted alongside the coordinates.
+    :param exclude_columns: List of column names to be excluded from the plotting.
     """
-    # Merge the coordinates and features dataframes on the 'Row' column
-    merged_df = pd.merge(d_coords, d_features, on='Row')
+    if exclude_columns is None:
+        exclude_columns = []
+    
+    # Merge the coordinates and data dataframes on the 'Row' column
+    merged_df = pd.merge(d_coords, d_data, on='Row')
 
-    # Remove 'Source' and 'Evolution' columns if they exist
     if 'Source' in merged_df.columns:
         merged_df.drop(columns='Source', inplace=True)
     if 'Evolution' in merged_df.columns:
         merged_df.drop(columns='Evolution', inplace=True)
 
+    # Remove specified columns
+    for column in exclude_columns:
+        if column in merged_df.columns:
+            merged_df.drop(columns=column, inplace=True)
+
     # Prepare the long-form DataFrame for facetting
-    melted_df = merged_df.melt(id_vars=['Row', 'z_1', 'z_2'], var_name='Feature', value_name='Value')
+    melted_df = merged_df.melt(id_vars=['Row', 'z_1', 'z_2'], var_name='DataColumn', value_name='Value')
 
     # Create the facetted plot using Plotly Express
     fig = px.scatter(
@@ -38,12 +56,12 @@ def plot_facetted_features(d_coords, d_features):
         x='z_1',
         y='z_2',
         color='Value',
-        facet_col='Feature',
-        facet_col_wrap=3,  # Adjust the number of columns per row
-        color_continuous_scale='Magma',
-        title='Facetted Plot of z_1 vs z_2 Colored by Feature Values',
-        labels={'Value': 'Feature Value'},
-        height=3000,  # Adjust the height as necessary
+        facet_col='DataColumn',
+        facet_col_wrap=3,  # Adjust the number of columns per row as necessary
+        color_continuous_scale='Viridis',
+        title='',
+        labels={'Value': 'Data Value'},
+        height=1000,  # Adjust the height as necessary
     )
 
     # Update the layout if needed
@@ -63,6 +81,7 @@ def plot_facetted_features(d_coords, d_features):
         annotation.text = feature_name
 
     return fig
+
 
 
 def plot_evolution_chart(d_coords, d_bounds):
@@ -110,7 +129,8 @@ def plot_evolution_chart(d_coords, d_bounds):
         yaxis=dict(title='z_2', showline = False), #removes Y-axis line),
         hovermode='closest',
         legend=dict(title='Source'),
-        margin=dict(l=0, r=0, t=0, b=0)  # Minimize margin to use space efficiently
+        margin=dict(l=0, r=0, t=0, b=0),  # Minimize margin to use space efficiently
+        height=350,  # Adjust the height as necessary
     )
 
     # Create the figure with data and layout
@@ -145,7 +165,14 @@ d_svm = pd.read_csv(os.path.join(experiment_dir, "svm_table.csv"))
 
 # Read the bounds file
 d_bounds = pd.read_csv(os.path.join(experiment_dir, "bounds_prunned.csv"))
+# Read the feature table
 d_features = pd.read_csv(os.path.join(experiment_dir, "feature_process.csv"))
+# Read the algorithm table
+d_algorithm = pd.read_csv(os.path.join(experiment_dir, "algorithm_raw.csv"))
+# Read the SVM table
+d_svm_preds = pd.read_csv(os.path.join(experiment_dir, "algorithm_svm.csv"))
+
+
 
 # Display the SVM table
 st.subheader("SVM")
@@ -162,10 +189,30 @@ with col1:
 
 
 with col2:
-    st.subheader("Best Algorithm")
+    st.subheader("Transformation")
+    dataframe = pd.read_csv(f"data/external/ISA/{experiment}/projection_matrix.csv")
+    st.write(dataframe.T)  
+        
 
 
-# Features
-st.subheader("Features")
-fig = plot_facetted_features(d_coords, d_features)
-st.plotly_chart(fig, use_container_width=True)
+
+
+# Create 4 tabs
+tabs = st.tabs(["Feature Distribution", "Performance Distribution", "SVM Model Prediction", "SVM Selection"])
+
+# tabs = ["Feature Distribution", "Performance Distribution", "", "SVM Model Prediction", "SVM Selection"]
+
+with tabs[0]:
+    st.subheader("Feature Distribution")
+    fig = plot_facetted_data(d_coords, d_features)
+    st.plotly_chart(fig, use_container_width=True)
+
+with tabs[1]:
+    st.subheader("Performance Distribution")
+    fig = plot_facetted_data(d_coords, d_algorithm)
+    st.plotly_chart(fig, use_container_width=True)
+
+with tabs[2]:
+    st.subheader("SVM Model Prediction")
+    fig = plot_facetted_data(d_coords, d_svm_preds)
+    st.plotly_chart(fig, use_container_width=True)
