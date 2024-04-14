@@ -3,9 +3,13 @@ import streamlit.components.v1 as components
 import json
 import networkx as nx
 import matplotlib.pyplot as plt
+import os
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
+
 
 # Custom imports
 from src.features.build_features import get_graph_features
@@ -167,11 +171,11 @@ def plot_graph(graph):
     st.pyplot(plt)
 
 def app():
-    # Load the JSON data
-    json_file_path = "data/interim/landscape_p_2_data.json"
-    data = load_data(json_file_path)
-    convergence_data_path = "data/interim/convergence_data_p_2.json"
-    convergence_data = load_data(convergence_data_path)
+
+    # List directories in data/external/qaoa-landscape
+    directories = [f for f in os.listdir("data/external/qaoa-landscape") if os.path.isdir(os.path.join("data/external/qaoa-landscape", f))]
+    # Number of layers (1 to 15)
+    p_values = [f"p={i}" for i in range(1, 16)]
 
     # Sidebar
     st.sidebar.title("QAOA")
@@ -180,8 +184,12 @@ def app():
 
     # Add Instance Selection to sidebar
     st.sidebar.subheader("Instance Selection")
-    graph_types = list(set(item["graph_type"] for item in data))
-    selected_graph_type = st.sidebar.selectbox("Select Graph Type:", sorted(list(set(item["graph_type"] for item in data))))
+    selected_graph_type = st.sidebar.selectbox("Select Graph Type:", sorted(list(set(directories))))
+
+    # Load the JSON data
+    final_layer_data_fp = f"data/external/qaoa-landscape/{selected_graph_type}/optimization_results_15_layers.json"
+    final_layer_data = load_data(final_layer_data_fp)
+    
 
     st.subheader("Instance Information")    
 
@@ -229,141 +237,126 @@ def app():
     with col1:
         st.write("**Instance**")
         # Find and plot the graph for the selected graph type
-        for item in data:
-            if item["graph_type"] == selected_graph_type:
-                graph = adjacency_matrix_to_graph(item["graph"]["adjacency_matrix"])
-                plot_graph(graph)
-                break  # Assuming you only want to plot the first matching graph
+        st.write(final_layer_data["graph_type"])
+    
+        if final_layer_data["graph_type"] == selected_graph_type:
+            graph = adjacency_matrix_to_graph(final_layer_data["graph"]["adjacency_matrix"])
+            plot_graph(graph)
 
     with col2:
         # Show table
-        display_graph_info(selected_graph_type, graph)                
+        display_graph_info(selected_graph_type, graph)
+
+    
+    # Facet chart for the optimization results
+    st.subheader("Optimization Results")
+    # Show keys
+    st.write("Keys:", final_layer_data.keys())
+    d_optimization_results = final_layer_data["optimization_results"]
+    # Conver to DataFrame
+    d_optimization_results = pd.DataFrame(d_optimization_results)
+    # Convert layers to string if they are not already
+    d_optimization_results['layer'] = d_optimization_results['layer'].astype(str)
+
+    # Create subplot titles
+    subplot_titles = [f'Layer = {i+1}' for i in range(1, 16)]
+    # Change last subplot title to be ""
+    subplot_titles[-1] = ""
+
+    # Create a subplot figure with 4 rows and 4 columns
+    fig = make_subplots(rows=4, cols=4, subplot_titles=subplot_titles, shared_xaxes=True, shared_yaxes=True, vertical_spacing=0.1, horizontal_spacing=0.1)
+    
+
+
+    # Assuming we have two optimizers for the sake of this example
+    optimizers = d_optimization_results['optimizer'].unique()
+
+    # Loop over each layer and each optimizer and add a trace for each combination to the appropriate subplot
+    for i, layer in enumerate(sorted(d_optimization_results['layer'].unique(), key=lambda x: int(x)), start=1):
+        layer_df = d_optimization_results[d_optimization_results['layer'] == layer]
+        row, col = divmod(i - 1, 4)
+        row += 1  # Adjust row to 1-indexed
+        col += 1  # Adjust col to 1-indexed
+        for optimizer in optimizers:
+            optimizer_df = layer_df[layer_df['optimizer'] == optimizer]
+            fig.add_trace(
+                go.Scatter(
+                    x=optimizer_df['iteration'],
+                    y=optimizer_df['energy'],
+                    mode='lines',
+                    name=optimizer,
+                    showlegend=(row == 1 and col == 1)  # Only show legend for the first subplot
+                ),
+                row=row,
+                col=col
+            )
+
+            # Add a trace for the exact ground state energy (dashed line) -- make same color on each plot
+            fig.add_trace(
+                go.Scatter(
+                    x=[0, optimizer_df['iteration'].max()],
+                    y=[final_layer_data["exact_ground_state_energy"], final_layer_data["exact_ground_state_energy"]],
+                    mode='lines',
+                    line=dict(dash='dash'),
+                    name='Exact Ground State Energy',
+                    showlegend=False,
+                    line_color='pink'
+                ),
+                row=row,
+                col=col
+            )
+
+            # Extend the y-axis range to include the exact ground state energy and a bit more
+            fig.update_yaxes(range=[final_layer_data["exact_ground_state_energy"] *1.5, optimizer_df['energy'].max()], row=row, col=col)
+
+    # Adjust the layout for each optimizer to have the same color across all plots
+    colors = iter(px.colors.qualitative.Plotly)  # Use Plotly's qualitative color scale
+    for optimizer in optimizers:
+        fig.update_traces(selector=dict(name=optimizer), line=dict(color=next(colors)))
+
+    # Update layout
+    fig.update_layout(
+        title_text='Energy by Layer and Optimizer',
+        height=1000, 
+        width=1200,  
+        showlegend=True
+    )
+
+    # Remove the empty last subplot in the 4th row
+    for i in range(1, 5):
+        fig.update_xaxes(row=4, col=i, visible=(i != 4))
+        fig.update_yaxes(row=4, col=i, visible=(i != 4))
+
+    # Display the plot in Streamlit
+    st.plotly_chart(fig)
+
     
     st.subheader("Landscape Visualization")
 
-    tabs = st.tabs(["$p=1$", "$p=2$", "$\gamma^{*}_{p=2}, \\beta^{*}_{p=2}$"])
+    # Create tabs for the landscape plots based on the number of layers (and add latex around the p values)
+    tabs = st.tabs([f"$p={i}$" for i in range(1, 16)])
 
-    with tabs[0]:
-
-        dimension = st.radio("Select the dimension for the landscape plot:", ('2d', '3d'))
-        # Ensure that the landscape_data is correctly retrieved from the selected item
-        landscape_data = None
-        for item in data:
-            if item["graph_type"] == selected_graph_type:
-                landscape_data = item["landscape_data"]
-                break  # Assuming you only want to use the first matching item's landscape data
-        
-        if landscape_data:
-            st.write("Landscape for instance.")
-            if get_number_of_triangles(graph) == 0:
-                st.write("The graph is triangle-free. The optimal angles are calculated analytically.")
-                point = calculate_optimal_angles_for_triangle_free_graph(graph)
-                # Write Latex for Optimal Angles extracted from point[0] and point[1] divided by pi (rounded to 4 decimal places)
-                st.latex(r'''
-                    (\gamma^*, \beta^*) := \left( {:.4f}\pi, {:.4f}\pi \right)
-                '''.format(point[1]/np.pi, point[0]/np.pi))
-                plotly_fig = plot_landscape_plotly(landscape_data, dimension=dimension, point=point)
+    # Loop through each one
+    for i, tab in enumerate(tabs):
+        with tab:
+            # Print what instance we are looking at and the number of layers
+            st.write(f"Instance: {selected_graph_type}")
+            st.write(f"Number of Layers: {i + 1}")
+            if i + 1 == 1:
+                "first layer"
             else:
-                st.write("The graph is **not** triangle-free. The numerical results are used to fix the angles.")
-                # If the graph is not triangle-free, we will fix the angles based on numerically computed results
-                point = find_min_gamma_beta(landscape_data)
-                # Write Latex for Optimal Angles extracted from point[0] and point[1] (rounded to 4 decimal places)
-                st.latex(r'''
-                    (\gamma^*, \beta^*) := \left( {:.4f}\pi, {:.4f}\pi \right)
-                '''.format(point[1]/np.pi, point[0]/np.pi))
+                # Load the landscape data for the selected graph type and number of layers
+                landscape_data_fp = f"data/external/qaoa-landscape/{selected_graph_type}/optimization_results_{i + 1}_layers.json"
+                landscape_data = load_data(landscape_data_fp)
+                landscape_data = landscape_data["landscape_data"]
+                # Add radio button to select dimension (for each layer)
+                dimension = st.radio("Select Dimension:", ["2d", "3d"], index=0, key=i)
+
+
+                # plot the landscape
+                fig = plot_landscape_plotly(landscape_data, dimension=dimension, source=selected_graph_type)
+                st.plotly_chart(fig)
                 
-
-                
-                
-                plotly_fig = plot_landscape_plotly(landscape_data, dimension=dimension, point=point, color='lightgreen')
-            st.components.v1.html(plotly_fig.to_html(include_mathjax='cdn'),height=500, width=800)
-        else:
-            st.write("No landscape data available for the selected graph type.")
-
-
-    with tabs[1]:
-        # Read in notes from notes/landscape_p_02.md
-        with open("app/notes/landscape_p_02.md", "r") as file:
-            landscape_notes_p2 = file.read()
-
-        st.markdown(landscape_notes_p2)
-        # Get optimal angles for p=1
-        point_p1 = point
-
-        dimension_p_2 = st.radio("Select the dimension for the p=2 landscape plot:", ('2d', '3d'))
-
-        st.write("Optimal angles for $p=1$ are $(\gamma^*, \\beta^*) = ({:.4f}\pi, {:.4f}\pi)$".format(point_p1[1]/np.pi, point_p1[0]/np.pi))
-
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            # Plot landscape for p=2
-            landscape_data_p2 = None
-            for item in data:
-                if item["graph_type"] == selected_graph_type:
-                    landscape_data_p2 = item["landscape_storage_p_2"]
-                    plotly_fig = plot_landscape_plotly(landscape_data_p2, dimension=dimension_p_2)
-                    st.components.v1.html(plotly_fig.to_html(include_mathjax='cdn'),height=500, width=500)
-
-        with col2:
-            # Convert the convergence data to a DataFrame
-            for item in convergence_data:
-                if item["graph_type"] == selected_graph_type:
-                    convergence_df = pd.DataFrame(item["p_2_results"])
-                    fig = go.Figure()
-
-                    min_energy = min(convergence_df['energy'].min(), convergence_df['exact_min_energy'].min())
-                    # Extend the y-axis a bit lower than the minimum energy value
-                    y_axis_min = min_energy - (abs(min_energy) * 0.25)  # Extend by 5% of the absolute minimum value
-
-                    # Add a line for each optimizer_name
-                    for optimizer_name in convergence_df['optimizer_name'].unique():
-                        df_sub = convergence_df[convergence_df['optimizer_name'] == optimizer_name]
-                        fig.add_trace(go.Scatter(x=df_sub['eval_count'], y=df_sub['energy'],
-                                                mode='lines', name=optimizer_name))
-
-                    # Add a dashed line for the exact_min_energy across all eval_count values
-                    # Assuming exact_min_energy is constant across all rows, if not adjust accordingly
-                    fig.add_trace(go.Scatter(x=convergence_df['eval_count'], y=convergence_df['exact_min_energy'],
-                                            mode='lines', name='Exact Min Energy', line=dict(dash='dash')))
-
-                    # Update layout to add titles and adjust legend
-                    fig.update_layout(title='Energy vs. Eval Count by Optimizer Name',
-                                    xaxis_title='Eval Count',
-                                    yaxis_title='Energy',
-                                    yaxis=dict(range=[y_axis_min, convergence_df['energy'].max()]),
-                                    legend_title='Optimizer Name')
-
-                    # Display the figure in Streamlit
-                    st.plotly_chart(fig)
-
-    with tabs[2]:
-        for item in convergence_data:
-            if item["graph_type"] == selected_graph_type:
-                convergence_df = pd.DataFrame(item["p_2_results"])
-                
-                # Define the angle types you want to plot
-                angle_types = ['gamma_1', 'gamma_2', 'beta_1', 'beta_2']
-                
-                for angle in angle_types:
-                    fig = go.Figure()
-                    
-                    # Add a line for each optimizer_name for the current angle type
-                    for optimizer_name in convergence_df['optimizer_name'].unique():
-                        df_sub = convergence_df[convergence_df['optimizer_name'] == optimizer_name]
-                        fig.add_trace(go.Scatter(x=df_sub['eval_count'], y=df_sub[angle],
-                                                mode='lines', name=f'{optimizer_name} {angle}'))
-                    
-                    # Update layout to add titles and adjust legend
-                    fig.update_layout(title=f'{angle} vs. Eval Count by Optimizer Name',
-                                    xaxis_title='Eval Count',
-                                    yaxis_title=angle.replace('_', ' ').title(),
-                                    legend_title='Optimizer Name')
-                    
-                    # Display the figure in Streamlit
-                    st.plotly_chart(fig)
-
-                    
-
 
 
 
