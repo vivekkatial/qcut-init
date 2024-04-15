@@ -3,6 +3,7 @@ import streamlit.components.v1 as components
 import json
 import networkx as nx
 import matplotlib.pyplot as plt
+import seaborn as sns
 import os
 import numpy as np
 import pandas as pd
@@ -77,7 +78,8 @@ def display_graph_info(graph_name, graph):
     info_df = pd.concat([top_info_df, selected_info_df], ignore_index=True)
 
     # Display the DataFrame using st.table which automatically bolds the header
-    st.table(info_df)
+    st.markdown(info_df.style.hide(axis="index").to_html(), unsafe_allow_html=True)
+    # st.table(info_df)
 
 def plot_landscape_plotly(landscape_data, dimension='2d', show_colorbar=True, source=None, point=None, **kwargs):
     # Define custom colors
@@ -174,8 +176,10 @@ def app():
 
     # List directories in data/external/qaoa-landscape
     directories = [f for f in os.listdir("data/external/qaoa-landscape") if os.path.isdir(os.path.join("data/external/qaoa-landscape", f))]
-    # Number of layers (1 to 15)
-    p_values = [f"p={i}" for i in range(1, 16)]
+
+    # Load the JSON data for p=1 
+    first_layer_landscapes = load_data("data/interim/landscape_p_2_data.json")
+    
 
     # Sidebar
     st.sidebar.title("QAOA")
@@ -233,7 +237,7 @@ def app():
             Cited from: [Zhou, L., Wang, S., Choi, S., Pichler, H., & Lukin, M. D. (2018). Quantum Approximate Optimization Algorithm: Performance, Mechanism, and Implementation on Near-Term Devices. *Physical Review A*, 97(2), 022304.](https://journals.aps.org/pra/abstract/10.1103/PhysRevA.97.022304)
             """)
                     
-    col1, col2 = st.columns([1, 1])
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.write("**Instance**")
         # Find and plot the graph for the selected graph type
@@ -246,10 +250,25 @@ def app():
     with col2:
         # Show table
         display_graph_info(selected_graph_type, graph)
+    with col3:
+            min_energy_details = final_layer_data["min_energy_details"]
+            # CONVERT TO DATAFRAME
+            min_energy_details = pd.DataFrame(min_energy_details)
+            # Add column for layer (index + 2)
+            min_energy_details['layer'] = min_energy_details.index + 2
+            # Only select layer and optimizer
+            min_energy_details = min_energy_details[['layer', 'optimizer']]
+            st.markdown(min_energy_details.style.hide(axis="index").to_html(), unsafe_allow_html=True)
+
 
     
     # Facet chart for the optimization results
     st.subheader("Optimization Results")
+
+    # Show table
+    # st.write(min_energy_details.style.hide(axis="index"))
+
+    
     # Show keys
     st.write("Keys:", final_layer_data.keys())
     d_optimization_results = final_layer_data["optimization_results"]
@@ -265,8 +284,6 @@ def app():
 
     # Create a subplot figure with 4 rows and 4 columns
     fig = make_subplots(rows=4, cols=4, subplot_titles=subplot_titles, shared_xaxes=True, shared_yaxes=True, vertical_spacing=0.1, horizontal_spacing=0.1)
-    
-
 
     # Assuming we have two optimizers for the sake of this example
     optimizers = d_optimization_results['optimizer'].unique()
@@ -331,7 +348,7 @@ def app():
     st.plotly_chart(fig)
 
     
-    st.subheader("Landscape Visualization")
+    st.subheader("Landscape Visualization", divider='rainbow')
 
     # Create tabs for the landscape plots based on the number of layers (and add latex around the p values)
     tabs = st.tabs([f"$p={i}$" for i in range(1, 16)])
@@ -343,7 +360,15 @@ def app():
             st.write(f"Instance: {selected_graph_type}")
             st.write(f"Number of Layers: {i + 1}")
             if i + 1 == 1:
-                "first layer"
+                # Find index
+                index = next(i for i, d in enumerate(first_layer_landscapes) if d["graph_type"] == selected_graph_type)
+                # Filter the first layer landscape data to be index of the selected graph type
+                landscape_data = first_layer_landscapes[index]["landscape_data"]
+                # Add radio button to select dimension (for each layer)
+                dimension = st.radio("Select Dimension:", ["2d", "3d"], index=0, key=i)
+                fig = plot_landscape_plotly(landscape_data, dimension=dimension, source=selected_graph_type)
+                st.plotly_chart(fig)
+                
             else:
                 # Load the landscape data for the selected graph type and number of layers
                 landscape_data_fp = f"data/external/qaoa-landscape/{selected_graph_type}/optimization_results_{i + 1}_layers.json"
@@ -356,8 +381,57 @@ def app():
                 # plot the landscape
                 fig = plot_landscape_plotly(landscape_data, dimension=dimension, source=selected_graph_type)
                 st.plotly_chart(fig)
+            
+            # Plotting
+            st.subheader(f"Parameter Distributions for Layer $p={i+1}$", divider='rainbow')
+
+            d_layer_params = d_optimization_results[d_optimization_results['layer'] == str(i+1)]
+            # Convert the parameters list to a DataFrame
+            d_params = pd.DataFrame(d_layer_params['parameters'].to_list())
+            
+            # Determine the midpoint to split the parameters into beta and gamma
+            midpoint = d_params.shape[1] // 2
+            
+            # Rename columns for beta and gamma
+            for j in range(midpoint):
+                d_params.rename(columns={j: f'beta_{j+1}'}, inplace=True)
+            for j in range(midpoint, d_params.shape[1]):
+                d_params.rename(columns={j: f'gamma_{j-midpoint+1}'}, inplace=True)
+            
+            # Add optimizer and iteration columns from d_layer_params to d_params
+            d_params['optimizer'] = d_layer_params['optimizer'].values
+            d_params['iteration'] = d_layer_params['iteration'].values
+
+            if i + 1 > 4:
+                    # Create facetted seaborn plot
+                    st.markdown("**Distribution Plots for Beta and Gamma**")
+                    # Melt the DataFrame for seaborn
+                    melt_params = d_params.melt(id_vars=['iteration', 'optimizer'], var_name='parameter', value_name='value')
+                    # Create a facet grid
+                    g = sns.relplot(data=melt_params, x='iteration', y='value', hue='optimizer', col='parameter',
+                                    col_wrap=4, kind='line', facet_kws={'sharey': False, 'sharex': True})
+                    g.set_titles("{col_name}")
+                    plt.subplots_adjust(top=0.9)
+                    g.fig.suptitle('Beta and Gamma Distributions')
+                    st.pyplot(g)
+            else:
+                # Plot beta and gamma distributions using Plotly
+                beta_columns = [col for col in d_params.columns if col.startswith('beta_')]
+                gamma_columns = [col for col in d_params.columns if col.startswith('gamma_')]
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**Beta Distributions**")
+                    for col in beta_columns:
+                        fig = px.line(d_params, x='iteration', y=col, color='optimizer',
+                                    labels={'value': col}, title=f"Line Plot for {col}")
+                        st.plotly_chart(fig)
                 
-
-
+                with col2:
+                    st.markdown("**Gamma Distributions**")
+                    for col in gamma_columns:
+                        fig = px.line(d_params, x='iteration', y=col, color='optimizer',
+                                    labels={'value': col}, title=f"Line Plot for {col}")
+                        st.plotly_chart(fig)
 
 app()

@@ -1,7 +1,7 @@
 import streamlit as st
 import plotly.graph_objs as go
 import plotly.express as px
-import time
+import json
 import numpy as np
 import pandas as pd
 import os
@@ -363,8 +363,9 @@ with tabs[4]:
 with tabs[5]:
     st.subheader("Model Information")
     # Read options.json
-    options = pd.read_json(os.path.join(experiment_dir, "options.json"), typ='series')
+    with open(os.path.join(experiment_dir, "options.json")) as f:
+        options = json.load(f)
     # Fully unnest the options
-    st.write(options)
+    st.json(options, expanded=False)
 
     
