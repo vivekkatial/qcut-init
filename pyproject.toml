@@ -10,7 +10,7 @@ packages = [
 
 [tool.poetry.dependencies]
 python = "^3.11"
-mlflow = "^2.11.1"
+mlflow = "2.9.1"
 python-dotenv = "^1.0.1"
 streamlit = "^1.33.0"
 gradio = "^4.25.0"
@@ -21,6 +21,7 @@ plotly = "^5.20.0"
 pynauty = "^2.8.6"
 seaborn = "^0.13.2"
 watchdog = "^4.0.0"
+boto3 = "^1.35.9"
 
 [build-system]
 requires = ["poetry-core"]
