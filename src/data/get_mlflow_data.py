@@ -73,17 +73,28 @@ def main():
     experiment_id = experiment.experiment_id
     logging.info(f"Retrieved experiment ID: {experiment_id}")
 
-    runs = client.search_runs(
-        experiment_ids=[experiment_id],
-        filter_string=f"attributes.status = 'FINISHED'",
-        max_results=10000
-    )
+    all_runs = []
+    next_page_token = None
+    while True:
+        logging.info(f"Fetching runs with token: {next_page_token}")
+        page_runs = client.search_runs(
+            experiment_ids=[experiment_id],
+            filter_string="attributes.status = 'FINISHED'",
+            max_results=1000,
+            page_token=next_page_token
+        )
+        all_runs.extend(page_runs)
+        next_page_token = page_runs.token
+        if not next_page_token:
+            break
+
+    logging.info(f"Total runs fetched: {len(all_runs)}")
     # Filter out evolved runs
-    logging.info(f"Processing {len(runs)}")
-    process_runs(client, runs, output_dir)
+    logging.info(f"Processing {len(all_runs)}")
+    process_runs(client, all_runs, output_dir)
     # Convert MLFlow runs to a DataFrame
     runs_data = []
-    for run in runs:
+    for run in all_runs:
         run_id = run.info.run_id
         run_data = run.data
         run_params = run_data.params
